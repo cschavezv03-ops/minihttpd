@@ -7,11 +7,12 @@ TARGET = minihttpd
 
 # compiler flags
 
-CFLAGS = -Wall -Wextra -Werror -pedantic -std=c99
+CFLAGS = -Wall -Wextra -Werror -Iinclude
 
 # source files
 
 SRC = src/main.c
+SRC += src/server.c
 
 # executable command
 

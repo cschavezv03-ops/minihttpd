@@ -9,7 +9,7 @@
 #include <errno.h>          // For errno
 #include <unistd.h>         // For close, read, write, and sleep
 
-#define IP_ADDRESS "localhost" // Define the IP address for the server to bind to
+#define IP_ADDRESS "localhost"  // Define the IP address for the server to bind to
 #define PORT "8080"             // Define the port number for the server to listen on
 
 //server() returns 1 if the server is running, otherwise it returns 0
@@ -59,6 +59,65 @@ int server(){
     if(p == NULL && nsd == -1){ // Check if no suitable address was found and the socket descriptor is still -1
         fprintf(stderr, "Failed to create socket\n"); // Print error message if no suitable address is found
         return 0;
+    }
+
+    if(listen(nsd, 5) < 0){
+        close(nsd); // Close the socket if listen fails
+        perror("listen");
+        return 0;
+    } else {
+        printf("Server is listening on %s:%s\n", IP_ADDRESS, PORT);
+    }
+
+    // Iterative server loop to accept incoming connections and handle them one at a time
+    // Demo server that echoes back received data to the client, it will be replaced with epoll in the future
+    int accept_sd = -1; // Initialize the accept socket descriptor to -1
+    while(1){
+        accept_sd = accept(nsd, NULL, NULL); // Accept incoming connections (blocking call)
+        if(accept_sd < 0){
+            perror("accept");
+            close(nsd);
+            return 0;
+        }
+        printf("Accepted a connection\n");
+        
+        char buffer[1024];
+
+        while(1){
+            ssize_t bytes_received = recv(accept_sd, buffer, sizeof(buffer) - 1, 0);
+
+            if(bytes_received < 0){
+                perror("recv");
+                break;
+            }
+
+            if(bytes_received == 0){
+                printf("Client disconnected\n");
+                break;
+            }
+
+            buffer[bytes_received] = '\0';
+            printf("Received: %s\n", buffer);
+
+            ssize_t bytes_sent = 0;
+
+            while(bytes_sent < bytes_received){
+                ssize_t n = send(accept_sd, buffer + bytes_sent, bytes_received - bytes_sent, MSG_NOSIGNAL);
+
+                if(n <= 0){
+                    perror("send");
+                    break;
+                }
+
+                bytes_sent += n;
+            }
+
+            if(bytes_sent < bytes_received){
+                break;
+            }
+        }
+
+        close(accept_sd);
     }
 
     return 1;
