@@ -31,6 +31,7 @@ int server(){
         return 0;
     }
 
+    int nsd = -1; // Initialize the socket descriptor to 0
     // Iterate through the linked list of addrinfo structures to find a suitable address to bind to
     for(p = res; p != NULL; p = p->ai_next){
         // Create a socket using the address information in the current addrinfo structure
@@ -43,18 +44,20 @@ int server(){
 
         // Bind the socket to the address in the current addrinfo structure
         if(bind(sd, p->ai_addr, p->ai_addrlen) < 0){
-            perror("bind"); // Print error message if bind fails
-            continue;       // Try the next addrinfo structure
+            perror("bind");     // Print error message if bind fails
+            close(sd);          // Close the socket if bind fails
+            continue;           // Try the next addrinfo structure
+        } else {
+            nsd = sd;   // Store the socket descriptor if bind is successful
+            printf("Socket created and bound successfully\n"); // Print success message if socket creation and binding are successful
+            break;      // Break the loop if socket creation and binding are successful
         }
-        
-        printf("Socket created and bound successfully\n"); // Print success message if socket creation and binding are successful
-        freeaddrinfo(res); // Free the linked list of addrinfo structures
-        break;
     }
 
-    if(p == NULL){
+    freeaddrinfo(res); // Free the linked list of addrinfo structures
+
+    if(p == NULL && nsd == -1){ // Check if no suitable address was found and the socket descriptor is still -1
         fprintf(stderr, "Failed to create socket\n"); // Print error message if no suitable address is found
-        freeaddrinfo(res); // Free the linked list of addrinfo structures
         return 0;
     }
 
