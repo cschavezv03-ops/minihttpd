@@ -3,7 +3,7 @@ CC = gcc
 
 # executable name
 
-TARGET = main
+TARGET = minihttpd
 
 # compiler flags
 
@@ -15,7 +15,13 @@ SRC = src/main.c
 
 # executable command
 
+.PHONY: all run clean
+
 all:
-	$(CC) $(CFLAGS) $(SRC) -o src/$(TARGET) && ./src/$(TARGET)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
+
+run:
+	./$(TARGET)
+
 clean:
-	rm -f src/$(TARGET)
+	rm -f $(TARGET)
