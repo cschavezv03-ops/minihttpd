@@ -1,19 +1,19 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include <stdio.h>          // For printf, perror
-#include <string.h>         // For memset
-#include <sys/types.h>      // For socket, bind, listen, accept
-#include <sys/socket.h>     // For socket, bind, listen, accept
-#include <netdb.h>          // For getaddrinfo, freeaddrinfo
-#include <arpa/inet.h>      // For htons
-#include <errno.h>          // For errno
-#include <unistd.h>         // For close, read, write, and sleep
+#include <stdio.h>              // For printf, perror
+#include <string.h>             // For memset
+#include <sys/types.h>          // For socket, bind, listen, accept
+#include <sys/socket.h>         // For socket, bind, listen, accept
+#include <netdb.h>              // For getaddrinfo, freeaddrinfo
+#include <arpa/inet.h>          // For htons
+#include <unistd.h>             // For close, read, write, and sleep
+#include "../include/server.h"  // Include the server header file for the server function declaration
 
 #define IP_ADDRESS "localhost"  // Define the IP address for the server to bind to
 #define PORT "8080"             // Define the port number for the server to listen on
 
-//server() returns 1 if the server is running, otherwise it returns 0
-int server(){
+//server() returns a file descriptor if the server is running, otherwise it returns -1
+int server(void){
 
     // sockaddr_in struct is used to store the server's address information
     struct addrinfo hints, *res, *p;
@@ -28,10 +28,10 @@ int server(){
     int status = getaddrinfo(IP_ADDRESS, PORT, &hints, &res);
     if(status != 0){
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status)); // Print error message if getaddrinfo fails
-        return 0;
+        return -1;
     }
 
-    int nsd = -1; // Initialize the socket descriptor to 0
+    int nsd = -1; // Initialize the socket descriptor to -1
     // Iterate through the linked list of addrinfo structures to find a suitable address to bind to
     for(p = res; p != NULL; p = p->ai_next){
         // Create a socket using the address information in the current addrinfo structure
@@ -56,28 +56,30 @@ int server(){
 
     freeaddrinfo(res); // Free the linked list of addrinfo structures
 
-    if(p == NULL && nsd == -1){ // Check if no suitable address was found and the socket descriptor is still -1
+    if(nsd == -1){ // Check if no suitable address was found and the socket descriptor is still -1
         fprintf(stderr, "Failed to create socket\n"); // Print error message if no suitable address is found
-        return 0;
+        return -1;
     }
 
     if(listen(nsd, 5) < 0){
         close(nsd); // Close the socket if listen fails
         perror("listen");
-        return 0;
+        return -1;
     } else {
         printf("Server is listening on %s:%s\n", IP_ADDRESS, PORT);
     }
 
+    return nsd; // Return the socket descriptor if the server is running successfully
+
     // Iterative server loop to accept incoming connections and handle them one at a time
     // Demo server that echoes back received data to the client, it will be replaced with epoll in the future
-    int accept_sd = -1; // Initialize the accept socket descriptor to -1
+    /*int accept_sd = -1; // Initialize the accept socket descriptor to -1
     while(1){
         accept_sd = accept(nsd, NULL, NULL); // Accept incoming connections (blocking call)
         if(accept_sd < 0){
             perror("accept");
             close(nsd);
-            return 0;
+            return -1;
         }
         printf("Accepted a connection\n");
         
@@ -120,5 +122,5 @@ int server(){
         close(accept_sd);
     }
 
-    return 1;
+    return 1; */
 }
