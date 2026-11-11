@@ -49,7 +49,7 @@ int server(void){
             continue;           // Try the next addrinfo structure
         } else {
             nsd = sd;   // Store the socket descriptor if bind is successful
-            printf("Socket created and bound successfully\n"); // Print success message if socket creation and binding are successful
+            printf("Socket created and bound successfully. Socket descriptor: %d\n", nsd); // Print success message if socket creation and binding are successful
             break;      // Break the loop if socket creation and binding are successful
         }
     }
