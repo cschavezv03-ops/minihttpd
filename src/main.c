@@ -1,12 +1,18 @@
 #include <stdio.h>
 #include <sys/epoll.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <errno.h>
+#include <fcntl.h>
 #include "../include/server.h"
 
 #define MAX_EVENTS 10
 
 int event_loop(void){
+
+    struct epoll_event registration = {0};
+    struct epoll_event ready_events[MAX_EVENTS];
+    struct epoll_event client_registration = {0};
 
     int server_fd = server(); // Start the server and get the listening socket descriptor
     if (server_fd < 0) {
@@ -23,11 +29,8 @@ int event_loop(void){
     }
 
     // Register the server socket with the epoll instance to monitor for incoming connections
-    struct epoll_event registration = {0};
     registration.events = EPOLLIN;     // Monitor for read events (incoming connections)
     registration.data.fd = server_fd;  // Store the server socket descriptor in the event data
-
-    struct epoll_event ready_events[MAX_EVENTS];
 
     // Add the server socket to the epoll instance
     if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &registration) == 0){
@@ -54,8 +57,44 @@ int event_loop(void){
 
         for (int i = 0; i < n_events; i++){
             int fd = ready_events[i].data.fd;
-            if(fd == server_fd){
-                // Pending connections. Server event attendance
+            if(fd == server_fd){ // The listening socket is ready to accept at least one connection
+                // Pending connections. Server event attendance (client acceptation)
+                while(1){
+                    int client_fd = accept(server_fd, NULL, NULL);
+                    if(client_fd >= 0){ // Client accepted
+                        // Non blocking socket configuration
+                        int flags = fcntl(client_fd, F_GETFL);
+                        if (flags == -1){
+                            perror("F_GETFL");
+                            close(client_fd);
+                            break;
+                        } else {
+                            int result = fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+                            if(result== -1){
+                                perror("F_SETFL");
+                                close(client_fd);
+                                break;
+                            }
+                        }
+                        // Register client file descriptor socket into epoll
+                        client_registration.events = EPOLLIN;     // Monitor for read events (incoming connections)
+                        client_registration.data.fd = client_fd;
+                        if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_registration) == 0){
+                            printf("Client socket registered with epoll successfully (fd=%d)\n", client_fd);
+                        }else{
+                            perror("epoll_ctl");
+                            close(client_fd);
+                            break;
+                        }
+                    }else if(errno == EINTR){ // Call has been interrupted
+                        continue;
+                    }else if (errno == EAGAIN || errno == EWOULDBLOCK) { // No pendant connections
+                        break;
+                    }else{
+                        perror("client_fd");
+                        break;
+                    }
+                }
             }else{
                 // Client event. TCP operations attendance
             }
