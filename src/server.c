@@ -15,14 +15,13 @@
 //server() returns a file descriptor if the server is running, otherwise it returns -1
 int server(void){
 
-    // sockaddr_in struct is used to store the server's address information
     struct addrinfo hints, *res, *p;
 
     memset(&hints, 0, sizeof(hints));   // Clear the hints structure
     hints.ai_family = AF_INET;          // Use IPv4
     hints.ai_socktype = SOCK_STREAM;    // Stream-oriented connection
     hints.ai_protocol = IPPROTO_TCP;    // Use TCP
-    hints.ai_flags = AI_PASSIVE;        // Server mode
+    //hints.ai_flags = AI_PASSIVE;        // Server mode
 
     // Get address information for the server in a linked list of addrinfo structures (res)
     int status = getaddrinfo(IP_ADDRESS, PORT, &hints, &res);
@@ -62,65 +61,12 @@ int server(void){
     }
 
     if(listen(nsd, 5) < 0){
-        close(nsd); // Close the socket if listen fails
         perror("listen");
+        close(nsd); // Close the socket if listen fails
         return -1;
     } else {
         printf("Server is listening on %s:%s\n", IP_ADDRESS, PORT);
     }
 
     return nsd; // Return the socket descriptor if the server is running successfully
-
-    // Iterative server loop to accept incoming connections and handle them one at a time
-    // Demo server that echoes back received data to the client, it will be replaced with epoll in the future
-    /*int accept_sd = -1; // Initialize the accept socket descriptor to -1
-    while(1){
-        accept_sd = accept(nsd, NULL, NULL); // Accept incoming connections (blocking call)
-        if(accept_sd < 0){
-            perror("accept");
-            close(nsd);
-            return -1;
-        }
-        printf("Accepted a connection\n");
-        
-        char buffer[1024];
-
-        while(1){
-            ssize_t bytes_received = recv(accept_sd, buffer, sizeof(buffer) - 1, 0);
-
-            if(bytes_received < 0){
-                perror("recv");
-                break;
-            }
-
-            if(bytes_received == 0){
-                printf("Client disconnected\n");
-                break;
-            }
-
-            buffer[bytes_received] = '\0';
-            printf("Received: %s\n", buffer);
-
-            ssize_t bytes_sent = 0;
-
-            while(bytes_sent < bytes_received){
-                ssize_t n = send(accept_sd, buffer + bytes_sent, bytes_received - bytes_sent, MSG_NOSIGNAL);
-
-                if(n <= 0){
-                    perror("send");
-                    break;
-                }
-
-                bytes_sent += n;
-            }
-
-            if(bytes_sent < bytes_received){
-                break;
-            }
-        }
-
-        close(accept_sd);
-    }
-
-    return 1; */
 }
