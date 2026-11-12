@@ -7,6 +7,7 @@
 #include <netdb.h>              // For getaddrinfo, freeaddrinfo
 #include <arpa/inet.h>          // For htons
 #include <unistd.h>             // For close, read, write, and sleep
+#include <fcntl.h>              // For fcntl
 #include "../include/server.h"  // Include the server header file for the server function declaration
 
 #define IP_ADDRESS "localhost"  // Define the IP address for the server to bind to
@@ -58,6 +59,21 @@ int server(void){
     if(nsd == -1){ // Check if no suitable address was found and the socket descriptor is still -1
         fprintf(stderr, "Failed to create socket\n"); // Print error message if no suitable address is found
         return -1;
+    }
+
+    // Non-blocking socket
+    int flags = fcntl(nsd, F_GETFL);
+    if (flags == -1){
+        perror("F_GETFL");
+        close(nsd);
+        return -1;
+    } else {
+        int result = fcntl(nsd, F_SETFL, flags | O_NONBLOCK);
+        if(result== -1){
+            perror("F_SETFL");
+            close(nsd);
+            return -1;
+        }
     }
 
     if(listen(nsd, 5) < 0){

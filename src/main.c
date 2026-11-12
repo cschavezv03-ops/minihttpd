@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <sys/epoll.h>
 #include <unistd.h>
+#include <errno.h>
 #include "../include/server.h"
+
+#define MAX_EVENTS 10
 
 int event_loop(void){
 
@@ -24,7 +27,7 @@ int event_loop(void){
     registration.events = EPOLLIN;     // Monitor for read events (incoming connections)
     registration.data.fd = server_fd;  // Store the server socket descriptor in the event data
 
-    struct epoll_event ready_events[10];
+    struct epoll_event ready_events[MAX_EVENTS];
 
     // Add the server socket to the epoll instance
     if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &registration) == 0){
@@ -36,16 +39,30 @@ int event_loop(void){
         return 1;
     }
 
-    int events_number = epoll_wait(epoll_fd, ready_events, 10, -1); // Wait for events on the epoll instance (blocking call)
-    if(events_number > 0){
-        for(int i = 0; i < events_number; i++){
-            printf("Pending connection on listening socket (fd=%d)\n", ready_events[i].data.fd);
+    while(1){
+        int n_events = epoll_wait(epoll_fd, ready_events, MAX_EVENTS, -1);
+
+        if(n_events == -1){
+            if(errno == EINTR){
+                continue;
+            }
+            perror("epoll_wait");
+            close(server_fd);
+            close(epoll_fd);
+            return 1;
         }
-    }else{
-        perror("epoll_wait");
-        return 1;
+
+        for (int i = 0; i < n_events; i++){
+            int fd = ready_events[i].data.fd;
+            if(fd == server_fd){
+                // Pending connections. Server event attendance
+            }else{
+                // Client event. TCP operations attendance
+            }
+        }
     }
 
+    // Free up resources
     close(server_fd);
     close(epoll_fd);
 
