@@ -200,16 +200,20 @@ int event_loop(void){
                             current_connection->output_length - current_connection->bytes_sent,
                             MSG_NOSIGNAL);
                         if(n_sent_bytes > 0){
+                            // Some bytes were sent successfully
                             current_connection->bytes_sent += (size_t)n_sent_bytes;
+                        }else if(n_sent_bytes == 0){
+                            // No progress and there are some pendant bytes to send
+                            fprintf(stderr, "send: No progress on fd=%d\n", fd);
+                            close_client = 1;
                         }else if(n_sent_bytes == -1){
                             if(errno == EINTR){
                                 printf("Sending to fd=%d interrupted. Retrying...\n", fd);
-                            }
-
-                            if(errno == EAGAIN || errno == EWOULDBLOCK){
-                                printf("Potential pending data\n");
+                            }else if(errno == EAGAIN || errno == EWOULDBLOCK){
+                                printf("Potential pending data. Retrying...\n");
                             }
                         }else{
+                            // Unrepairable error
                             perror("send");
                             close_client = 1;
                         }
@@ -217,17 +221,20 @@ int event_loop(void){
 
                     if(!close_client && current_connection->output_length > 0 && current_connection->bytes_sent == current_connection->output_length){
                         // No pendant output to send
+                        // Sent terminated but client still connected
                         if(current_connection->read_closed == 0){
+                            printf("All bytes (%d) were sent\n", (int)current_connection->output_length);
+                            printf("Sent data to fd=%d: %.*s\n", fd, (int)n_sent_bytes, current_connection->output_buffer);
                             current_connection->output_length = 0;
                             current_connection->bytes_sent = 0;
+                            // Reset to EPOLLIN to wait for data again
                             send_to.events = EPOLLIN | EPOLLRDHUP;
                             send_to.data.ptr = current_connection;
-                            printf("All bytes (%d) were sent\n", (int)n_sent_bytes);
-                            printf("Sent data to fd=%d: %.*s\n", fd, (int)n_sent_bytes, current_connection->output_buffer);
-                        }
-                        if(epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1){
-                            perror("epoll_ctl MOD");
-                            close_client = 1;
+                            // Restore EPOLLIN flag into the file descriptor
+                            if(epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1){
+                                perror("epoll_ctl MOD");
+                                close_client = 1;
+                            }
                         }
                     }
                 }
