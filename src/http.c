@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>             // memchr, memcpy, etc...
 #include <strings.h>            // strncasecmp()
-#include <ctype.h>              // Character validation
 #include "../include/http.h"
 
 // It returns 1 if the character is permited, instead of that, returns 0
@@ -302,7 +301,7 @@ int parse_http_request(const char *data, size_t data_length, HttpRequest *reques
     return HTTP_PARSE_ERROR;
 }
 
-int main(int argc, char *argv[]) {
+/*int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s \"METHOD /URI HTTP/1.1\"\n", argv[0]);
         return 1;
@@ -319,4 +318,4 @@ int main(int argc, char *argv[]) {
     printf("\nParse result: %d\n", result);
 
     return 0;
-}
+}*/
