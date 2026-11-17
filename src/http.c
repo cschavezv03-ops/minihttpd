@@ -1,9 +1,28 @@
 #include <stdio.h>
-#include <string.h>
+#include <string.h>             // memchr, memcpy, etc...
+#include <strings.h>            // strncasecmp()
+#include <ctype.h>              // Character validation
 #include "../include/http.h"
 
+// It returns 1 if the character is permited, instead of that, returns 0
+static int is_http_token_char(unsigned char c){
+    // A-Za-z0-9
+    if((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')){
+        return 1;
+    }
+    // !#$%&'*+-.^_`|~ without accepting \0
+    switch (c) {
+        case '!': case '#': case '$': case '%':
+        case '&': case '\'': case '*': case '+':
+        case '-': case '.': case '^': case '_':
+        case '`': case '|': case '~':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 int parse_request_line(const char *line, size_t line_length, HttpRequest *request){
-    // GET /index.html HTTP/1.1 parsing
     if(line_length == 0){
         fprintf(stderr, "Empty request line\n");
         return -1;
@@ -24,6 +43,14 @@ int parse_request_line(const char *line, size_t line_length, HttpRequest *reques
     }
 
     size_t method_length = (size_t)(first_space - line);
+
+    // Validate method valid characters
+    for (size_t i = 0; i < method_length; i++) {
+        if (!is_http_token_char((unsigned char)line[i])) {
+            fprintf(stderr, "Invalid HTTP method\n");
+            return -1;
+        }
+    }
     
     // Method length validation
     if(method_length == 0 || method_length >= HTTP_METHOD_SIZE){
@@ -49,14 +76,18 @@ int parse_request_line(const char *line, size_t line_length, HttpRequest *reques
 
     size_t uri_length = (size_t)(second_space - uri_start);
 
-    if (uri_length == 0 || uri_length >= HTTP_URI_SIZE) {
-        fprintf(stderr, "Invalid URI length\n");
-        return -1;
+    // Validate URI valid characters
+    for (size_t i = 0; i < uri_length; i++) {
+        unsigned char c = (unsigned char)uri_start[i];
+
+        if (c <= 32 || c == 127) {
+            fprintf(stderr, "Invalid URI character\n");
+            return -1;
+        }
     }
 
-    // If something like this comes: GET /index.html\0hidden HTTP/1.1
-    if (memchr(uri_start, '\0', uri_length) != NULL) {
-        fprintf(stderr, "Invalid NUL byte in URI\n");
+    if (uri_length == 0 || uri_length >= HTTP_URI_SIZE) {
+        fprintf(stderr, "Invalid URI length\n");
         return -1;
     }
 
@@ -100,9 +131,178 @@ int parse_request_line(const char *line, size_t line_length, HttpRequest *reques
     return 0;
 }
 
+// HTTP header parsing
+int parse_header(const char *line, size_t line_length, HttpRequest *request){
+    if(line_length == 0){
+        fprintf(stderr, "Empty request line\n");
+        return -1;
+    }
 
+    if(line == NULL || request == NULL){
+        fprintf(stderr, "Invalid null pointer\n");
+        return -1;
+    }
+    
+    // Separator ':' localization
+    const char *colon = (const char *)memchr(line, ':', line_length);
+    if(colon == NULL){
+        printf("Missing colon\n");
+        return -1;
+    }
 
-/*int main(int argc, char *argv[]) {
+    size_t name_length = (size_t)(colon - line);
+
+    if(name_length == 0){
+        fprintf(stderr,"Missing header name\n");
+        return -1;
+    }
+
+    // Header name verification with valid characters
+    for (size_t i = 0; i < name_length; i++) {
+        if (!is_http_token_char((unsigned char)line[i])) {
+            fprintf(stderr, "Invalid HTTP header name\n");
+            return -1;
+        }
+    }   
+
+    // Remove spaces from the value
+    const char *value_start = colon + 1;
+    const char *value_end = line + line_length;
+
+    while (value_start < value_end && (*value_start == ' ' || *value_start == '\t')) {
+        // Skip initial spaces
+        value_start++;
+    }
+
+    while (value_end > value_start && (value_end[-1] == ' ' || value_end[-1] == '\t')) {
+        // Skip final spaces
+        value_end--;
+    }
+
+    size_t value_length = (size_t)(value_end - value_start);
+
+    // Headers value verification with valid characters
+    for (size_t i = 0; i < value_length; i++) {
+        unsigned char c = (unsigned char)value_start[i];
+
+        if ((c < 32 && c != '\t') || c == 127) {
+            fprintf(stderr, "Invalid HTTP header value\n");
+            return -1;
+        }
+    }
+
+    // Compare without distinguish upper or lower case
+    if(name_length == 4 && strncasecmp(line, "Host", 4) == 0){
+        // Host header
+        if(value_length == 0 || value_length >= sizeof(request->host)){
+            fprintf(stderr, "Invalid Host length\n");
+            return -1;
+        }
+        if(request->host_seen == 1){
+            fprintf(stderr, "No more than one host allowed\n");
+            return -1;
+        }
+        memcpy(request->host, value_start, value_length);
+        request->host[value_length] = '\0';
+        request->host_seen = 1;
+    }else if(name_length == 10 && strncasecmp(line, "Connection", 10) == 0){
+        // Connection header
+        if(value_length >= sizeof(request->connection)){
+            return -1;
+        }
+        memcpy(request->connection, value_start, value_length);
+        request->connection[value_length] = '\0';
+    }else if(name_length == 10 && strncasecmp(line, "User-agent", 10) == 0){
+        // User-agent header
+        if(value_length >= sizeof(request->user_agent)){
+            return -1;
+        }
+        memcpy(request->user_agent, value_start, value_length);
+        request->user_agent[value_length] = '\0';
+    }else{
+        // Ignore valid headers but with valid sintaxis
+    }
+
+    return 0;
+}
+
+int parse_http_request(const char *data, size_t data_length, HttpRequest *request){
+    // Recognize that \r\n separates lines and that \r\n\r\n terminates headings
+    if(data == NULL || request == NULL){
+        fprintf(stderr, "Invalid null pointer\n");
+        return HTTP_PARSE_ERROR;
+    }
+    
+    if(data_length == 0){
+        return HTTP_PARSE_INCOMPLETE;
+    }
+
+    memset(request, 0, sizeof(*request));
+
+    const char *newline = (const char *)memchr(data, '\n', data_length);
+
+    if(newline == NULL){
+        return HTTP_PARSE_INCOMPLETE;
+    }
+
+    // Find the first \r\n (Request line)
+    if (newline == data || newline[-1] != '\r') {
+        fprintf(stderr, "Invalid HTTP line ending\n");
+        return HTTP_PARSE_ERROR;
+    }
+
+    size_t content_length = (size_t)(newline - data - 1);
+
+    // Process the first line
+    if (parse_request_line(data, content_length, request) != 0) {
+        return HTTP_PARSE_ERROR;
+    }
+
+    // Go to the headers
+    const char *cursor = newline + 1;
+    const char *next_line;
+
+    // Find \r\n into header lines and parse
+    for(int i = 0; i <= HTTP_NUM_HEADERS; i++){
+        size_t remaining = data_length - (size_t)(cursor - data);
+
+        next_line = (const char *)memchr(cursor, '\n', remaining);
+
+        // If there's no more data, request is incomplete
+        if(next_line == NULL){
+            return HTTP_PARSE_INCOMPLETE;
+        }
+
+        // Find the CRLF delimiter
+        if (next_line == cursor || next_line[-1] != '\r') {
+            fprintf(stderr, "Invalid HTTP line ending\n");
+            return HTTP_PARSE_ERROR;
+        }
+
+        size_t header_length = (size_t)(next_line - cursor - 1);
+        if (header_length == 0) {
+            if (request->host_seen != 1) {
+                fprintf(stderr, "Missing Host header\n");
+                return HTTP_PARSE_ERROR;
+            }
+            return HTTP_PARSE_OK;
+        }
+
+        if (i == HTTP_NUM_HEADERS) {
+            fprintf(stderr, "Too many HTTP headers\n");
+            return HTTP_PARSE_ERROR;
+        }
+
+        if(parse_header(cursor, header_length, request) != 0){
+            return HTTP_PARSE_ERROR;
+        }
+        cursor = next_line + 1;
+    }
+
+    return HTTP_PARSE_ERROR;
+}
+
+int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s \"METHOD /URI HTTP/1.1\"\n", argv[0]);
         return 1;
@@ -110,18 +310,13 @@ int parse_request_line(const char *line, size_t line_length, HttpRequest *reques
 
     HttpRequest request = {0};
 
-    int result = parse_request_line(
+    int result = parse_http_request(
         argv[1],
         strlen(argv[1]),
         &request
     );
 
-    if (result != 0) {
-        fprintf(stderr, "\nInvalid HTTP request line\n");
-        return 1;
-    }
-
-    printf("\nHTTP request parsed successfully!\n");
+    printf("\nParse result: %d\n", result);
 
     return 0;
-}*/
+}
