@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #define BUFFER_SIZE 4096
+#define INPUT_BUFFER_SIZE 8192
 
 // Differentiate server events from client events
 typedef enum{
@@ -19,6 +20,8 @@ typedef struct{
     size_t output_length;               // Total amount of prepared data
     size_t bytes_sent;                  // Total amount of successful data sent
     int read_closed;
+    char input_buffer[INPUT_BUFFER_SIZE];
+    size_t input_length;
 }Connection;
 
 int server(void);   //It is a function that starts the server and returns a socket descriptor if the server is running successfully, otherwise it returns -1. Whoever receives a valid descriptor is responsible for closing it when they are finished using it.

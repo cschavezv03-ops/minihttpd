@@ -225,12 +225,14 @@ int parse_header(const char *line, size_t line_length, HttpRequest *request){
     return 0;
 }
 
-int parse_http_request(const char *data, size_t data_length, HttpRequest *request){
+int parse_http_request(const char *data, size_t data_length, size_t *bytes_consumed, HttpRequest *request){
     // Recognize that \r\n separates lines and that \r\n\r\n terminates headings
-    if(data == NULL || request == NULL){
+    if(data == NULL || request == NULL || bytes_consumed == NULL){
         fprintf(stderr, "Invalid null pointer\n");
         return HTTP_PARSE_ERROR;
     }
+
+    *bytes_consumed = 0;
     
     if(data_length == 0){
         return HTTP_PARSE_INCOMPLETE;
@@ -282,8 +284,11 @@ int parse_http_request(const char *data, size_t data_length, HttpRequest *reques
         if (header_length == 0) {
             if (request->host_seen != 1) {
                 fprintf(stderr, "Missing Host header\n");
+
                 return HTTP_PARSE_ERROR;
             }
+            *bytes_consumed = (size_t)((next_line + 1) - data);
+            printf("Bytes consumed: %zu\n", *bytes_consumed);
             return HTTP_PARSE_OK;
         }
 
@@ -297,7 +302,6 @@ int parse_http_request(const char *data, size_t data_length, HttpRequest *reques
         }
         cursor = next_line + 1;
     }
-
     return HTTP_PARSE_ERROR;
 }
 
@@ -308,14 +312,17 @@ int parse_http_request(const char *data, size_t data_length, HttpRequest *reques
     }
 
     HttpRequest request = {0};
+    size_t bytes_consumed = 0;
 
     int result = parse_http_request(
         argv[1],
         strlen(argv[1]),
+        &bytes_consumed,
         &request
     );
 
-    printf("\nParse result: %d\n", result);
+    printf("Parse result: %d\n", result);
+    printf("Bytes consumed: %zu\n", bytes_consumed);
 
     return 0;
 }*/

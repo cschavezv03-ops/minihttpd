@@ -46,6 +46,7 @@ int parse_header(
 int parse_http_request(
     const char *data,
     size_t data_length,
+    size_t *bytes_consumed,
     HttpRequest *request
 );
 #endif // HTTP_H

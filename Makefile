@@ -13,6 +13,7 @@ CFLAGS = -Wall -Wextra -Werror -Iinclude
 
 SRC = src/main.c
 SRC += src/server.c
+SRC += src/http.c
 
 # executable command
 

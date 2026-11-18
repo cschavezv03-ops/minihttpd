@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "../include/server.h"
+#include "../include/http.h"
 
 #define MAX_EVENTS 10
 
@@ -30,6 +31,10 @@ int event_loop(void){
     Connection listener;
     memset(&listener, 0, sizeof(listener));
 
+    // HTTP
+    HttpRequest request;
+    memset(&request, 0, sizeof(request));
+
     //VARIABLES
     int client_fd;
     int server_fd;
@@ -39,9 +44,10 @@ int event_loop(void){
     int result;
     int fd;
     int socket_error;
-    int pending_output;
+    //int pending_output;
     ssize_t bytes_received;
-    ssize_t n_sent_bytes;
+    //ssize_t n_sent_bytes;
+    size_t bytes_consumed;
     socklen_t len;
 
     server_fd = server(); // Start the server and get the listening socket descriptor
@@ -151,28 +157,47 @@ int event_loop(void){
                 uint32_t events = ready_events[i].events;
                 if(events & EPOLLIN){ // If the file descriptor includes EPOLLIN, try to receive bytes
                     while(1){
-                        
+                        // Calculate available space
+                        size_t available = sizeof(current_connection->input_buffer) - current_connection->input_length;
+                        if(available == 0){
+                            fprintf(stderr, "HTTP input buffer full: fd=%d\n", fd);
+                            // Set request as too large, resulting in an HTTP 400 error
+                            close_client = 1;
+                            break;
+                        }
                         // Add received bytes to the buffer of the current_connection structure
-                        bytes_received = recv(fd, current_connection->output_buffer, BUFFER_SIZE, 0);
+                        bytes_received = recv(fd, current_connection->input_buffer + current_connection->input_length, available, 0);
                         if(bytes_received > 0){
-                            // Receive and prepare bytes for sending
-                            current_connection->output_length = (size_t)bytes_received;
-                            current_connection->bytes_sent = 0;
-                            send_to.events = EPOLLOUT | EPOLLRDHUP;
+                            // Update input_length
+                            current_connection->input_length += (size_t)bytes_received;
+                            // Parsing
+                            int state = parse_http_request(current_connection->input_buffer, current_connection->input_length, &bytes_consumed, &request);
+                            if(state == HTTP_PARSE_ERROR){
+                                // 400 bad request
+                                fprintf(stderr, "HTTP parse error\n");
+                                close_client = 1;
+                            }else if(state == HTTP_PARSE_INCOMPLETE){
+                                // Retain bytes and wait for more data
+                            }else{ // HTTP_PARSE_OK
+                                // Request ready for processing
+                                printf("HTTP request complete: method=%s, URI=%s, consumed=%zu\n", request.method, request.uri, bytes_consumed);
+                                close_client = 1;
+                            }
+                            /* send_to.events = EPOLLOUT | EPOLLRDHUP;
                             send_to.data.ptr = current_connection;
                             if(epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1){
                                 perror("epoll_ctl MOD");
                                 close_client = 1;
                                 break;
-                            }
-                            printf("\nReceived %zd bytes from fd=%d\n", bytes_received, fd);
-                            printf("Data: %.*s\n", (int)bytes_received, current_connection->output_buffer);
+                            }*/
+                            printf("Accumulated HTTP data: %.*s\n", (int)current_connection->input_length, current_connection->input_buffer);
                             break;
                         }
                         
                         if (bytes_received == 0){
                             printf("\nClient fd=%d stopped sending\n", fd);
                             current_connection->read_closed = 1;
+                            close_client = 1;
                             break;
                         }
                         
@@ -192,7 +217,7 @@ int event_loop(void){
                     }
                 }
 
-                if(events & EPOLLOUT){
+                /*if(events & EPOLLOUT){
                     // Send data to destination
                     if(current_connection->bytes_sent < current_connection->output_length){
                         n_sent_bytes = send(fd,
@@ -237,7 +262,7 @@ int event_loop(void){
                             }
                         }
                     }
-                }
+                }*/
 
                 if(events & EPOLLERR){ //Handle connection failure
                     //Check error with getsockopt()
@@ -260,12 +285,13 @@ int event_loop(void){
                 if(events & EPOLLRDHUP){ //Allow to finish a pendant response before the closing (in HTTP)
                     printf("Client finished connection: fd=%d\n", fd);
                     current_connection->read_closed = 1;
-                }
-
-                pending_output = current_connection->bytes_sent < current_connection->output_length;
-                if(!pending_output && current_connection->read_closed){
                     close_client = 1;
                 }
+
+                /*pending_output = current_connection->bytes_sent < current_connection->output_length;
+                if(!pending_output && current_connection->read_closed){
+                    close_client = 1;
+                }*/
 
                 if (close_client == 1) {
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
