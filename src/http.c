@@ -348,28 +348,3 @@ int build_http_header(char *buffer, size_t capacity, int status, const char *con
     *header_length = (size_t)n;
     return 0;
 }
-
-/*int main(void) {
-    char buffer[512];
-    size_t header_length = 0;
-
-    int result = build_http_header(
-        buffer,
-        sizeof(buffer),
-        200,
-        "text/html",
-        13,
-        1,
-        &header_length
-    );
-
-    if (result != 0) {
-        fprintf(stderr, "Failed to build HTTP header\n");
-        return 1;
-    }
-
-    printf("%s", buffer);
-    printf("Header length: %zu\n", header_length);
-
-    return 0;
-}*/
