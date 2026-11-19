@@ -12,6 +12,31 @@
 
 #define MAX_EVENTS 10
 
+static int prepare_http_response(int epoll_fd, Connection *conn, int status){
+    if (conn == NULL){
+        return -1;
+    }
+    // Do not overwrite a pending response
+    if (conn->bytes_sent < conn->output_length){
+        return -1;
+    }
+    size_t header_length = 0;
+    if (build_http_header(conn->output_buffer, sizeof(conn->output_buffer), status, "text/plain", 0, 0, &header_length) != 0){
+        return -1;
+    }
+    conn->output_length = header_length;
+    conn->bytes_sent = 0;
+    conn->close_after_response = 1;
+    struct epoll_event ev = {0};
+    ev.events = EPOLLOUT;
+    ev.data.ptr = conn;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, conn->fd, &ev) == -1){
+        perror("epoll_ctl MOD");
+        return -1;
+    }
+    return 0;
+}
+
 int event_loop(void){
 
     //EPOLL
@@ -43,12 +68,9 @@ int event_loop(void){
     int flags;
     int result;
     int fd;
-    int socket_error;
-    //int pending_output;
     ssize_t bytes_received;
     ssize_t n_sent_bytes;
     size_t bytes_consumed;
-    socklen_t len;
 
     server_fd = server(); // Start the server and get the listening socket descriptor
     if (server_fd < 0) {
@@ -127,7 +149,7 @@ int event_loop(void){
                         client_connection->type = CLIENT;
                         client_connection->fd = client_fd;
                         // Register client file descriptor socket into epoll
-                        client_registration.events = EPOLLIN | EPOLLRDHUP;     // Monitor for read events (incoming connections)
+                        client_registration.events = EPOLLIN;     // Monitor for read events (incoming connections)
                         client_registration.data.ptr = client_connection;
                         if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_registration) == 0){
                             printf("\nClient socket registered with epoll successfully (fd=%d)\n", client_fd);
@@ -160,9 +182,12 @@ int event_loop(void){
                         // Calculate available space
                         size_t available = sizeof(current_connection->input_buffer) - current_connection->input_length;
                         if(available == 0){
+                            // 400 Bad Request
                             fprintf(stderr, "HTTP input buffer full: fd=%d\n", fd);
                             // Set request as too large, resulting in an HTTP 400 error
-                            close_client = 1;
+                            if (prepare_http_response(epoll_fd, current_connection, 400) != 0) {
+                                close_client = 1;
+                            }
                             break;
                         }
                         // Add received bytes to the buffer of the current_connection structure
@@ -172,39 +197,40 @@ int event_loop(void){
                             current_connection->input_length += (size_t)bytes_received;
                             // Parsing
                             int state = parse_http_request(current_connection->input_buffer, current_connection->input_length, &bytes_consumed, &request);
-                            if(state == HTTP_PARSE_ERROR){
-                                // 400 bad request
-                                fprintf(stderr, "HTTP parse error\n");
-                                close_client = 1;
-                            }else if(state == HTTP_PARSE_INCOMPLETE){
-                                // Retain bytes and wait for more data
-                            }else{ // HTTP_PARSE_OK
-                                // Request ready for processing
-                                size_t header_length = 0;
-
-                                int result = build_http_header(current_connection->output_buffer, sizeof(current_connection->output_buffer),200,"text/plain", 0, 0, &header_length);
-                                if (result == 0) {
-                                    current_connection->output_length = header_length;
-                                    current_connection->bytes_sent = 0;
-                                }
-                                current_connection->close_after_response = 1;
-                            }
-                            send_to.events = EPOLLOUT | EPOLLRDHUP;
-                            send_to.data.ptr = current_connection;
-                            if(epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1){
-                                perror("epoll_ctl MOD");
-                                close_client = 1;
+                            if (state == HTTP_PARSE_INCOMPLETE) {
+                                // Keep the received data and wait for more
                                 break;
                             }
+                            int status = 0;
+                            if(state == HTTP_PARSE_ERROR){
+                                status = 400;
+                            }else if(strcmp(request.method, "GET") != 0){
+                                status = 405;
+                            }else{
+                                status = 200;
+                            }
+                            if (prepare_http_response(epoll_fd, current_connection, status) != 0) {
+                                fprintf(stderr, "Failed to queue HTTP response on fd=%d\n", fd);
+                                close_client = 1;
+                            }
                             break;
                         }
-                        
-                        if (bytes_received == 0){
-                            printf("\nClient fd=%d stopped sending\n", fd);
+                        if (bytes_received == 0) {
+                            printf("Client fd=%d stopped sending\n", fd);
                             current_connection->read_closed = 1;
+                            if (current_connection->output_length == 0) {
+                                if (current_connection->input_length > 0) {
+                                    // The client stopped sending an incomplete request
+                                    if (prepare_http_response(epoll_fd, current_connection, 400) != 0) {
+                                        close_client = 1;
+                                    }
+                                } else {
+                                    // Nothing remains to process or send
+                                    close_client = 1;
+                                }
+                            }
                             break;
                         }
-                        
                         if(errno == EINTR){
                             printf("Reception from fd=%d interrupted\n", fd);
                             continue;
@@ -255,7 +281,7 @@ int event_loop(void){
                             close_client = 1;
                         }else{
                             // Keep-alive: wait for the next HTTP request
-                            send_to.events = EPOLLIN | EPOLLRDHUP;
+                            send_to.events = EPOLLIN;
                             send_to.data.ptr = current_connection;
                             if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1) {
                                 perror("epoll_ctl MOD");
@@ -266,32 +292,14 @@ int event_loop(void){
                 }
 
                 if(events & EPOLLERR){ //Handle connection failure
-                    //Check error with getsockopt()
-                    socket_error = 0;
-                    len = sizeof(socket_error);
-
-                    if(getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error, &len) == -1){
-                        perror("getsockopt");
-                    }else{
-                        fprintf(stderr, "Socket error: %s\n", strerror(socket_error));
-                    }
+                    fprintf(stderr, "Socket error on fd=%d\n", fd);
                     close_client = 1;
                 }
 
-                if(events & EPOLLHUP){ //Don't eliminate data or pendant responses (in HTTP)
-                    printf("Connection hangup: fd=%d\n", fd);
-                    current_connection->read_closed = 1;
-                }
-
-                if(events & EPOLLRDHUP){ //Allow to finish a pendant response before the closing (in HTTP)
-                    printf("Client finished connection: fd=%d\n", fd);
-                    current_connection->read_closed = 1;
-                }
-
-                /*pending_output = current_connection->bytes_sent < current_connection->output_length;
-                if(!pending_output && current_connection->read_closed){
+                if ((events & EPOLLHUP) && !(events & (EPOLLIN | EPOLLOUT))){
+                    fprintf(stderr, "Socket hangup on fd=%d\n", fd);
                     close_client = 1;
-                }*/
+                }
 
                 if (close_client == 1) {
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL) == -1) {

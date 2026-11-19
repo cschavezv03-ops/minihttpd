@@ -323,34 +323,29 @@ int parse_http_request(const char *data, size_t data_length, size_t *bytes_consu
 }
 
 int build_http_header(char *buffer, size_t capacity, int status, const char *content_type, size_t content_length, int keep_alive, size_t *header_length) {
-    if (buffer == NULL || content_type == NULL ||
-        header_length == NULL || capacity == 0) {
+    if (buffer == NULL || content_type == NULL || header_length == NULL || capacity == 0){
         return -1;
     }
-
     *header_length = 0;
-
     const char *reason = http_status_code(status);
-
     int n = snprintf(buffer,capacity,
         "HTTP/1.1 %d %s\r\n"
+        "%s"
         "Content-Type: %s\r\n"
         "Content-Length: %zu\r\n"
         "Connection: %s\r\n"
         "\r\n",
         status,
         reason,
+        status == 405 ? "Allow: GET\r\n" : "",
         content_type,
         content_length,
         keep_alive ? "keep-alive" : "close"
     );
-
     if (n < 0 || (size_t)n >= capacity) {
         return -1;
     }
-
     *header_length = (size_t)n;
-
     return 0;
 }
 
