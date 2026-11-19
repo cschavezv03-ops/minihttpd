@@ -46,7 +46,7 @@ int event_loop(void){
     int socket_error;
     //int pending_output;
     ssize_t bytes_received;
-    //ssize_t n_sent_bytes;
+    ssize_t n_sent_bytes;
     size_t bytes_consumed;
     socklen_t len;
 
@@ -180,24 +180,28 @@ int event_loop(void){
                                 // Retain bytes and wait for more data
                             }else{ // HTTP_PARSE_OK
                                 // Request ready for processing
-                                printf("HTTP request complete: method=%s, URI=%s, consumed=%zu\n", request.method, request.uri, bytes_consumed);
-                                close_client = 1;
+                                size_t header_length = 0;
+
+                                int result = build_http_header(current_connection->output_buffer, sizeof(current_connection->output_buffer),200,"text/plain", 0, 0, &header_length);
+                                if (result == 0) {
+                                    current_connection->output_length = header_length;
+                                    current_connection->bytes_sent = 0;
+                                }
+                                current_connection->close_after_response = 1;
                             }
-                            /* send_to.events = EPOLLOUT | EPOLLRDHUP;
+                            send_to.events = EPOLLOUT | EPOLLRDHUP;
                             send_to.data.ptr = current_connection;
                             if(epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1){
                                 perror("epoll_ctl MOD");
                                 close_client = 1;
                                 break;
-                            }*/
-                            printf("Accumulated HTTP data: %.*s\n", (int)current_connection->input_length, current_connection->input_buffer);
+                            }
                             break;
                         }
                         
                         if (bytes_received == 0){
                             printf("\nClient fd=%d stopped sending\n", fd);
                             current_connection->read_closed = 1;
-                            close_client = 1;
                             break;
                         }
                         
@@ -217,13 +221,10 @@ int event_loop(void){
                     }
                 }
 
-                /*if(events & EPOLLOUT){
+                if(events & EPOLLOUT){
                     // Send data to destination
                     if(current_connection->bytes_sent < current_connection->output_length){
-                        n_sent_bytes = send(fd,
-                            current_connection->output_buffer + current_connection->bytes_sent,
-                            current_connection->output_length - current_connection->bytes_sent,
-                            MSG_NOSIGNAL);
+                        n_sent_bytes = send(fd,current_connection->output_buffer + current_connection->bytes_sent,current_connection->output_length - current_connection->bytes_sent,MSG_NOSIGNAL);
                         if(n_sent_bytes > 0){
                             // Some bytes were sent successfully
                             current_connection->bytes_sent += (size_t)n_sent_bytes;
@@ -236,33 +237,33 @@ int event_loop(void){
                                 printf("Sending to fd=%d interrupted. Retrying...\n", fd);
                             }else if(errno == EAGAIN || errno == EWOULDBLOCK){
                                 printf("Potential pending data. Retrying...\n");
+                            }else{
+                                // Unrepairable error
+                                perror("send");
+                                close_client = 1;
                             }
-                        }else{
-                            // Unrepairable error
-                            perror("send");
-                            close_client = 1;
                         }
-                    }
 
                     if(!close_client && current_connection->output_length > 0 && current_connection->bytes_sent == current_connection->output_length){
                         // No pendant output to send
+                        printf("HTTP response sent completely to fd=%d\n", fd);
+                        // Clear completed output
+                        current_connection->output_length = 0;
+                        current_connection->bytes_sent = 0;
                         // Sent terminated but client still connected
-                        if(current_connection->read_closed == 0){
-                            printf("All bytes (%d) were sent\n", (int)current_connection->output_length);
-                            printf("Sent data to fd=%d: %.*s\n", fd, (int)n_sent_bytes, current_connection->output_buffer);
-                            current_connection->output_length = 0;
-                            current_connection->bytes_sent = 0;
-                            // Reset to EPOLLIN to wait for data again
+                        if (current_connection->close_after_response || current_connection->read_closed) {
+                            close_client = 1;
+                        }else{
+                            // Keep-alive: wait for the next HTTP request
                             send_to.events = EPOLLIN | EPOLLRDHUP;
                             send_to.data.ptr = current_connection;
-                            // Restore EPOLLIN flag into the file descriptor
-                            if(epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1){
+                            if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &send_to) == -1) {
                                 perror("epoll_ctl MOD");
                                 close_client = 1;
                             }
                         }
                     }
-                }*/
+                }
 
                 if(events & EPOLLERR){ //Handle connection failure
                     //Check error with getsockopt()
@@ -285,7 +286,6 @@ int event_loop(void){
                 if(events & EPOLLRDHUP){ //Allow to finish a pendant response before the closing (in HTTP)
                     printf("Client finished connection: fd=%d\n", fd);
                     current_connection->read_closed = 1;
-                    close_client = 1;
                 }
 
                 /*pending_output = current_connection->bytes_sent < current_connection->output_length;
@@ -297,16 +297,15 @@ int event_loop(void){
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
                         perror("epoll_ctl DEL");
                     }
-
                     if (close(fd) == -1) {
                         perror("close");
                     }
-
                     free(current_connection);
                 }
             }
         }
     }
+}
 
     // Free up resources
     close(server_fd);

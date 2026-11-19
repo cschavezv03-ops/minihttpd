@@ -49,4 +49,15 @@ int parse_http_request(
     size_t *bytes_consumed,
     HttpRequest *request
 );
+
+// Generate http headers
+int build_http_header(
+    char *buffer,
+    size_t capacity,
+    int status,
+    const char *content_type,
+    size_t content_length,
+    int keep_alive,
+    size_t *header_length
+);
 #endif // HTTP_H

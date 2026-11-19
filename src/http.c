@@ -21,6 +21,23 @@ static int is_http_token_char(unsigned char c){
     }
 }
 
+// It returns the corresponding status code
+static const char *http_status_code(int status) {
+    if(status != 200 && status != 400 && status != 403 && status != 404 && status != 405 && status != 500){
+        return "Not admitted code";
+    }
+    
+    switch (status) {
+        case 200: return "OK";
+        case 400: return "Bad Request";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 500: return "Internal Server Error";
+        default:  return "Internal Server Error";
+    }
+}
+
 int parse_request_line(const char *line, size_t line_length, HttpRequest *request){
     if(line_length == 0){
         fprintf(stderr, "Empty request line\n");
@@ -305,24 +322,59 @@ int parse_http_request(const char *data, size_t data_length, size_t *bytes_consu
     return HTTP_PARSE_ERROR;
 }
 
-/*int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s \"METHOD /URI HTTP/1.1\"\n", argv[0]);
+int build_http_header(char *buffer, size_t capacity, int status, const char *content_type, size_t content_length, int keep_alive, size_t *header_length) {
+    if (buffer == NULL || content_type == NULL ||
+        header_length == NULL || capacity == 0) {
+        return -1;
+    }
+
+    *header_length = 0;
+
+    const char *reason = http_status_code(status);
+
+    int n = snprintf(buffer,capacity,
+        "HTTP/1.1 %d %s\r\n"
+        "Content-Type: %s\r\n"
+        "Content-Length: %zu\r\n"
+        "Connection: %s\r\n"
+        "\r\n",
+        status,
+        reason,
+        content_type,
+        content_length,
+        keep_alive ? "keep-alive" : "close"
+    );
+
+    if (n < 0 || (size_t)n >= capacity) {
+        return -1;
+    }
+
+    *header_length = (size_t)n;
+
+    return 0;
+}
+
+/*int main(void) {
+    char buffer[512];
+    size_t header_length = 0;
+
+    int result = build_http_header(
+        buffer,
+        sizeof(buffer),
+        200,
+        "text/html",
+        13,
+        1,
+        &header_length
+    );
+
+    if (result != 0) {
+        fprintf(stderr, "Failed to build HTTP header\n");
         return 1;
     }
 
-    HttpRequest request = {0};
-    size_t bytes_consumed = 0;
-
-    int result = parse_http_request(
-        argv[1],
-        strlen(argv[1]),
-        &bytes_consumed,
-        &request
-    );
-
-    printf("Parse result: %d\n", result);
-    printf("Bytes consumed: %zu\n", bytes_consumed);
+    printf("%s", buffer);
+    printf("Header length: %zu\n", header_length);
 
     return 0;
 }*/
