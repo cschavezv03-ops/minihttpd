@@ -12,7 +12,7 @@ static const MimeEntry types[] = {
     {".jpeg", "image/jpeg"}
 };
 
-const char *get_mime_type(const char *path) {
+const char *get_mime_type(const char *path){
     if (path == NULL) {
         return "application/octet-stream";
     }
@@ -28,14 +28,4 @@ const char *get_mime_type(const char *path) {
         }
 	}
 	return "application/octet-stream";
-}
-
-int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        return 1;
-    }
-
-    printf("MIME: %s\n", get_mime_type(argv[1]));
-
-    return 0;
 }
