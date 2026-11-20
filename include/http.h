@@ -9,7 +9,7 @@
 #define HTTP_HOST_SIZE 256          // Host: localhost:8080   
 #define HTTP_CONNECTION_SIZE 32     // Connection: keep-alive
 #define HTTP_USER_AGENT_SIZE 256    // User-Agent: curl/8.0
-#define HTTP_NUM_HEADERS 3         // Number of HTTP/1.1 headers
+#define HTTP_NUM_HEADERS 32         // Number of HTTP/1.1 headers
 
 //Divide the first HTTP Request Line
 typedef struct {
