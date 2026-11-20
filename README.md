@@ -1,46 +1,46 @@
 # MiniHTTPd
 
-Servidor HTTP/1.1 basico desarrollado en C para Linux, sin bibliotecas HTTP externas. El proyecto permite estudiar la comunicacion TCP, el procesamiento de solicitudes HTTP y la atencion concurrente de clientes mediante `epoll` en un solo hilo.
+A basic HTTP/1.1 server written in C for Linux, without external HTTP libraries. This project explores TCP communication, HTTP request processing, and concurrent client handling using `epoll` in a single thread.
 
-## Funcionalidades
+## Features
 
-- Solicitudes `GET` y entrega de archivos estaticos desde `www/`.
-- Archivos HTML, CSS, JavaScript, PNG y JPG/JPEG con el tipo MIME correspondiente.
-- Analisis de la linea de solicitud HTTP/1.1 y los encabezados `Host`, `Connection` y `User-Agent`.
-- Concurrencia basada en eventos (`epoll`) y sockets no bloqueantes.
-- Conexiones persistentes (*keep-alive*) para reutilizar una misma conexion TCP.
-- Respuestas HTTP `200`, `400`, `403`, `404`, `405` y `500`.
-- Comprobacion de rutas mediante `realpath()` para restringir el acceso a `www/`, validacion de limites de los buffers y construccion acotada de cabeceras con `snprintf()`.
+- Handles `GET` requests and serves static files from `www/`.
+- Supports HTML, CSS, JavaScript, PNG, and JPG/JPEG files with their corresponding MIME types.
+- Parses the HTTP/1.1 request line and the `Host`, `Connection`, and `User-Agent` headers.
+- Uses event-driven concurrency (`epoll`) and non-blocking sockets.
+- Supports persistent connections (*keep-alive*) to reuse the same TCP connection.
+- Returns HTTP status codes `200`, `400`, `403`, `404`, `405`, and `500`.
+- Validates paths with `realpath()` to restrict access to `www/`, checks buffer limits, and uses `snprintf()` for bounded header construction.
 
-## Requisitos
+## Requirements
 
-- Linux (se desarrollo y probo en Fedora).
-- GCC y Make.
+- Linux (developed and tested on Fedora).
+- GCC and Make.
 
-## Compilacion y ejecucion
+## Build and Run
 
-Desde la raiz del repositorio:
+From the repository root:
 
 ```bash
 make clean && make
 ./minihttpd
 ```
 
-El servidor escucha en `localhost:8080`. Tambien puede iniciarse con `make run` despues de compilarlo.
+The server listens on `localhost:8080`. You can also start it with `make run` after building it.
 
-Para limpiar el ejecutable:
+To remove the compiled executable:
 
 ```bash
 make clean
 ```
 
-## Pruebas
+## Testing
 
-Con el servidor ejecutandose, abrir en el navegador:
+With the server running, open the following address in your browser:
 
 <http://127.0.0.1:8080/>
 
-O consultar los recursos desde otra terminal:
+Alternatively, request resources from another terminal:
 
 ```bash
 curl -i http://127.0.0.1:8080/
@@ -49,16 +49,16 @@ curl -i http://127.0.0.1:8080/script.js
 curl -o /tmp/image.png http://127.0.0.1:8080/image.png
 ```
 
-Comprobar respuestas de error:
+Test error responses:
 
 ```bash
-curl -i http://127.0.0.1:8080/noexiste.html
+curl -i http://127.0.0.1:8080/nonexistent.html
 curl -i -X POST http://127.0.0.1:8080/
 ```
 
-Las respuestas esperadas son `404 Not Found` y `405 Method Not Allowed`, respectivamente. El archivo `/` corresponde a `www/index.html`. Los recursos solicitados deben existir en el directorio `www/`.
+The expected responses are `404 Not Found` and `405 Method Not Allowed`, respectively. The `/` path maps to `www/index.html`. Requested resources must exist in the `www/` directory.
 
-## Estructura del proyecto
+## Project Structure
 
 ```text
 minihttpd/
@@ -82,22 +82,22 @@ minihttpd/
     └── image.png
 ```
 
-- `server.c`: crea y configura el socket TCP de escucha.
-- `main.c`: coordina `epoll`, la recepcion de solicitudes y el envio de respuestas y archivos.
-- `http.c`: analiza solicitudes y construye cabeceras HTTP.
-- `files.c`: resuelve y valida rutas, abre archivos y obtiene su tamano.
-- `mime.c`: identifica el tipo de contenido a partir de la extension.
-- `www/`: contiene los recursos estaticos publicados.
+- `server.c`: creates and configures the TCP listening socket.
+- `main.c`: coordinates `epoll`, request reception, and response and file transmission.
+- `http.c`: parses requests and builds HTTP headers.
+- `files.c`: resolves and validates paths, opens files, and retrieves their sizes.
+- `mime.c`: determines the content type based on the file extension.
+- `www/`: contains the static resources served by MiniHTTPd.
 
-## Funcionamiento general
+## How It Works
 
-El servidor registra el socket de escucha y los clientes en `epoll`. `EPOLLIN` indica cuando se pueden aceptar conexiones o recibir solicitudes, mientras que `EPOLLOUT` permite continuar el envio de una respuesta sin bloquear el hilo. Para una solicitud `GET` valida, el servidor busca el archivo dentro de `www/`, obtiene su tipo MIME y tamano, envia la cabecera HTTP y transmite el contenido mediante `sendfile()`. Con *keep-alive*, puede atender otra solicitud reutilizando la misma conexion TCP.
+The server registers its listening socket and client sockets with `epoll`. `EPOLLIN` indicates when connections can be accepted or requests can be received, while `EPOLLOUT` allows the server to continue sending responses without blocking the thread. For a valid `GET` request, the server locates the file within `www/`, determines its MIME type and size, sends the HTTP headers, and transfers the content using `sendfile()`. With *keep-alive*, another request can be handled over the same TCP connection.
 
-## Alcance
+## Scope
 
-MiniHTTPd es una implementacion academica para comprender HTTP/1.1 y la concurrencia basada en eventos. Solo implementa `GET` y archivos estaticos; no incluye TLS, aplicaciones dinamicas ni las caracteristicas de seguridad y rendimiento de un servidor web de produccion.
+MiniHTTPd is an academic implementation intended to demonstrate HTTP/1.1 and event-driven concurrency. It only supports `GET` and static files; it does not include TLS, dynamic applications, or the security and performance features of a production web server.
 
-## Referencias
+## References
 
 - [RFC 9110 - HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110)
 - [RFC 9112 - HTTP/1.1](https://www.rfc-editor.org/rfc/rfc9112)
